@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
@@ -27,25 +26,19 @@ func main() {
 }
 
 func buildMenu(desk desktop.App, started bool, a fyne.App) *fyne.Menu {
-	var menu1 *fyne.MenuItem
-	menu1 = fyne.NewMenuItem("start", func() {
+	menu1 := fyne.NewMenuItem("start", func() {
 		fmt.Println("started")
+		settings := loadSettings()
+
+		if settings != nil {
+			os.Setenv("BOUNDARY_ADDR", settings["BOUNDARY_ADDR"])
+			os.Setenv("BOUNDARY_CACERT", settings["BOUNDARY_CACERT"])
+			os.Setenv("BOUNDARY_TLS_SERVER_NAME", settings["BOUNDARY_TLS_SERVER_NAME"])
+			os.Setenv("BOUNDARY_PASS", settings["BOUNDARY_PASS"])
+		}
+
 		w := a.NewWindow("New Window")
-		//w.SetContent(widget.NewLabel("Hello, World!")) // Set the content of the window
 		w.Resize(fyne.NewSize(400, 300))
-
-		addrEntry := widget.NewEntry()
-		addrEntry.SetPlaceHolder("Enter BOUNDARY_ADDR")
-
-		cacertEntry := widget.NewEntry()
-		cacertEntry.SetPlaceHolder("Enter BOUNDARY_CACERT")
-
-		tlsServerNameEntry := widget.NewEntry()
-		tlsServerNameEntry.SetPlaceHolder("Enter BOUNDARY_TLS_SERVER_NAME")
-
-		passEntry := widget.NewEntry()
-		passEntry.SetPlaceHolder("Enter BOUNDARY_PASS")
-		passEntry.Password = true
 
 		usernameEntry := widget.NewEntry()
 		usernameEntry.SetPlaceHolder("Enter USERNAME")
@@ -60,23 +53,15 @@ func buildMenu(desk desktop.App, started bool, a fyne.App) *fyne.Menu {
 		remoteEntry.SetPlaceHolder("Enter REMOTE")
 
 		runButton := widget.NewButton("Set Envs and Run SSH Command", func() {
-			// Set environment variables
-			os.Setenv("BOUNDARY_ADDR", addrEntry.Text)
-			os.Setenv("BOUNDARY_CACERT", cacertEntry.Text)
-			os.Setenv("BOUNDARY_TLS_SERVER_NAME", tlsServerNameEntry.Text)
-			os.Setenv("BOUNDARY_PASS", passEntry.Text)
+			portForwards := []string{
+				"8080:localhost:8080",
+				"8081:localhost:8081",
+			}
 
-			// Run SSH Command
-			//runSSHCommand()
-			BoundaryTunnel("/opt/homebrew/bin/boundary", usernameEntry.Text, targetIDEntry.Text, localEntry.Text, remoteEntry.Text)
+			BoundaryTunnel("/opt/homebrew/bin/boundary", usernameEntry.Text, targetIDEntry.Text, portForwards)
 		})
 
-		// Layout
 		w.SetContent(container.NewVBox(
-			addrEntry,
-			cacertEntry,
-			tlsServerNameEntry,
-			passEntry,
 			usernameEntry,
 			targetIDEntry,
 			localEntry,
@@ -84,26 +69,26 @@ func buildMenu(desk desktop.App, started bool, a fyne.App) *fyne.Menu {
 			runButton,
 		))
 
-		w.Show() // Show the new window
+		w.Show()
 
-		desk.SetSystemTrayMenu(buildMenu(desk, true, a)) // Rebuild menu with 'started' = true
+		desk.SetSystemTrayMenu(buildMenu(desk, true, a))
 	})
 
 	menu2 := fyne.NewMenuItem("Settings", func() {
 		showSupportWindow(a)
 	})
 
-	menu3 := fyne.NewMenuItem("show2", func() {
-		fmt.Println("menu2")
+	menu3 := fyne.NewMenuItem("Quit", func() {
+		a.Quit()
 	})
 
-	return fyne.NewMenu("MyApp", menu1, menu2, menu3)
+	return fyne.NewMenu("Tunnelvision", menu1, menu2, menu3)
 }
 
 func showSupportWindow(a fyne.App) {
 	w := a.NewWindow("Support Settings")
+	w.Resize(fyne.NewSize(400, 300))
 
-	// Entry widgets for each setting
 	addrEntry := widget.NewEntry()
 	addrEntry.SetPlaceHolder("Enter BOUNDARY_ADDR")
 	cacertEntry := widget.NewEntry()
@@ -114,10 +99,17 @@ func showSupportWindow(a fyne.App) {
 	passEntry.SetPlaceHolder("Enter BOUNDARY_PASS")
 	passEntry.Password = true
 
-	// Load existing settings
-	loadSettings(addrEntry, cacertEntry, tlsServerNameEntry, passEntry)
+	settings, err := os.ReadFile(settingsFile)
+	if err == nil {
+		lines := strings.Split(string(settings), "\n")
+		if len(lines) >= 4 {
+			addrEntry.SetText(lines[0])
+			cacertEntry.SetText(lines[1])
+			tlsServerNameEntry.SetText(lines[2])
+			passEntry.SetText(lines[3])
+		}
+	}
 
-	// Save button
 	saveButton := widget.NewButton("Save Settings", func() {
 		saveSettings(addrEntry.Text, cacertEntry.Text, tlsServerNameEntry.Text, passEntry.Text)
 		beeep.Notify("Settings Saved", "Your settings have been saved successfully.", "")
@@ -134,44 +126,56 @@ func showSupportWindow(a fyne.App) {
 	w.Show()
 }
 
-const settingsFile = "boundary_settings.txt"
+const settingsFile = "/Users/filip/boundary_settings.txt"
 
 func saveSettings(addr, cacert, tlsServerName, pass string) {
 	content := fmt.Sprintf("%s\n%s\n%s\n%s", addr, cacert, tlsServerName, pass)
-	err := ioutil.WriteFile(settingsFile, []byte(content), 0644)
+	err := os.WriteFile(settingsFile, []byte(content), 0644)
 	if err != nil {
 		beeep.Alert("Error", "Failed to save settings: "+err.Error(), "")
 	}
 }
 
-func loadSettings(addrEntry, cacertEntry, tlsServerNameEntry, passEntry *widget.Entry) {
-	content, err := ioutil.ReadFile(settingsFile)
+func loadSettings() map[string]string {
+	content, err := os.ReadFile(settingsFile)
 	if err != nil {
-		return // File not found or other error, just return
+		return nil
 	}
 
+	settingsMap := make(map[string]string)
 	lines := strings.Split(string(content), "\n")
 	if len(lines) >= 4 {
-		addrEntry.SetText(lines[0])
-		cacertEntry.SetText(lines[1])
-		tlsServerNameEntry.SetText(lines[2])
-		passEntry.SetText(lines[3])
+		settingsMap["BOUNDARY_ADDR"] = lines[0]
+		settingsMap["BOUNDARY_CACERT"] = lines[1]
+		settingsMap["BOUNDARY_TLS_SERVER_NAME"] = lines[2]
+		settingsMap["BOUNDARY_PASS"] = lines[3]
 	}
+
+	return settingsMap
 }
 
-func BoundaryTunnel(BOUNDARY_PATH string, USERNAME string, TARGETID string, LOCAL string, REMOTE string) {
+func BoundaryTunnel(BOUNDARY_PATH string, USERNAME string, TARGETID string, portForwards []string) {
 	fmt.Println("BOUNDARY_PATH: " + BOUNDARY_PATH)
 	var stdoutBuf, stderrBuf bytes.Buffer
-	cmd := exec.Command(BOUNDARY_PATH, "connect", "ssh", "-username", USERNAME, "-target-id", TARGETID, "--", "-L", LOCAL+":localhost:"+REMOTE)
+
+	args := []string{"connect", "ssh", "-username", USERNAME, "-target-id", TARGETID, "--"}
+	for _, portForward := range portForwards {
+		args = append(args, "-L", portForward)
+	}
+
+	cmd := exec.Command(BOUNDARY_PATH, args...)
+	fmt.Println("cmd: " + strings.Join(cmd.Args, " "))
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
 	cmd.Stdin = os.Stdin
+
 	if err := cmd.Run(); err != nil {
 		fullOutput := "STDOUT:\n" + stdoutBuf.String() + "\nSTDERR:\n" + stderrBuf.String()
-		beeep.Alert("SSH Command Error", fullOutput, "")
+		beeep.Alert("Boundary Command Error", fullOutput, "")
 		return
 	}
 
 	message := stdoutBuf.String()
-	beeep.Notify("SSH Command Output", message, "assets/information.png")
+	fmt.Println(message)
+	beeep.Notify("Boundary Command Output", message, "assets/information.png")
 }
