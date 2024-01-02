@@ -27,7 +27,6 @@ func main() {
 
 func buildMenu(desk desktop.App, started bool, a fyne.App) *fyne.Menu {
 	menu1 := fyne.NewMenuItem("start", func() {
-		fmt.Println("started")
 		settings := loadSettings()
 
 		if settings != nil {
