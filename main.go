@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/stenstromen/tunnelvision/types"
@@ -29,17 +30,61 @@ func init() {
 }
 
 func main() {
-	app := app.New()
+	myApp := app.New()
 
-	mainWindow = app.NewWindow("Tunnelvision")
-	hosts, _ := loadHostsFromFile(settingsFile2)
-	updateTrayMenu(app, hosts)
+	mainWindow = myApp.NewWindow("Tunnelvision")
 
-	app.Run()
+	hostsFile, err := getHostsFilePath()
+	if err != nil {
+		fmt.Println("Error getting hosts file path:", err)
+		return
+	}
+	hosts, _ := loadHostsFromFile(hostsFile)
+	updateTrayMenu(myApp, hosts)
+
+	myApp.Run()
+}
+
+func getAppSupportDir() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	appSupportDir := filepath.Join(homeDir, "Library", "Application Support", "Tunnelvision")
+	if err := os.MkdirAll(appSupportDir, 0700); err != nil {
+		return "", err
+	}
+
+	return appSupportDir, nil
+}
+
+func getSettingsFilePath() (string, error) {
+	appSupportDir, err := getAppSupportDir()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(appSupportDir, "settings.yaml"), nil
+}
+
+func getHostsFilePath() (string, error) {
+	appSupportDir, err := getAppSupportDir()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(appSupportDir, "hosts.yaml"), nil
 }
 
 func updateHostsList() {
-	hosts, err := loadHostsFromFile(settingsFile2)
+	hostsFile, err := getHostsFilePath()
+	if err != nil {
+		fmt.Println("Error getting hosts file path:", err)
+		return
+	}
+
+	hosts, err := loadHostsFromFile(hostsFile)
 	if err != nil {
 		fmt.Println("Error loading hosts:", err)
 		return
@@ -56,9 +101,15 @@ func updateHostsList() {
 }
 
 func onHostAdded(app fyne.App, newHost types.Host) {
-	hosts, _ := loadHostsFromFile(settingsFile2)
+	hostsFile, err := getHostsFilePath()
+	if err != nil {
+		fmt.Println("Error getting hosts file path:", err)
+		return
+	}
+
+	hosts, _ := loadHostsFromFile(hostsFile)
 	hosts = append(hosts, newHost)
-	_ = saveHostsToFile(hosts, settingsFile2)
+	_ = saveHostsToFile(hosts, hostsFile)
 
 	updateTrayMenu(app, hosts)
 }
@@ -257,15 +308,18 @@ func showSupportWindow(a fyne.App) {
 	w.Show()
 }
 
-const settingsFile = "/Users/filip/Documents/tunnelvision/settings.yaml"
-const settingsFile2 = "/Users/filip/Documents/tunnelvision/hosts.yaml"
-
 func saveSettings(addr, cacert, tlsServerName, pass string) {
 	settings := types.Settings{
 		BoundaryAddr:          addr,
 		BoundaryCACert:        cacert,
 		BoundaryTLSServerName: tlsServerName,
 		BoundaryPass:          pass,
+	}
+
+	settingsFile, err := getSettingsFilePath()
+	if err != nil {
+		beeep.Alert("Error", "Failed to get settings file path: "+err.Error(), "")
+		return
 	}
 
 	data, err := yaml.Marshal(&settings)
@@ -282,6 +336,12 @@ func saveSettings(addr, cacert, tlsServerName, pass string) {
 
 func loadSettings() *types.Settings {
 	var settings types.Settings
+
+	settingsFile, err := getSettingsFilePath()
+	if err != nil {
+		fmt.Println("Error getting settings file path:", err)
+		return nil
+	}
 
 	data, err := os.ReadFile(settingsFile)
 	if err != nil {
