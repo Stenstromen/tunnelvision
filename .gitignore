@@ -1,4 +1,5 @@
 .DS_Store
 Tunnelvision.app
 tunnelvision
-boundary_settings.txt
+hosts.yaml
+settings.yaml

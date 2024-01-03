@@ -7,81 +7,216 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/stenstromen/tunnelvision/types"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
 	"github.com/gen2brain/beeep"
+	"gopkg.in/yaml.v2"
 )
 
-func main() {
-	a := app.New()
+var trayMenu *fyne.Menu
+var mainWindow fyne.Window
+var hostsList *widget.List
 
-	if desk, ok := a.(desktop.App); ok {
-		desk.SetSystemTrayMenu(buildMenu(desk, false, a))
-	}
+var activeTunnels map[string]bool // Keyed by host name
 
-	a.Run()
+func init() {
+	activeTunnels = make(map[string]bool)
 }
 
-func buildMenu(desk desktop.App, started bool, a fyne.App) *fyne.Menu {
-	menu1 := fyne.NewMenuItem("start", func() {
-		settings := loadSettings()
+func main() {
+	app := app.New()
 
-		if settings != nil {
-			os.Setenv("BOUNDARY_ADDR", settings["BOUNDARY_ADDR"])
-			os.Setenv("BOUNDARY_CACERT", settings["BOUNDARY_CACERT"])
-			os.Setenv("BOUNDARY_TLS_SERVER_NAME", settings["BOUNDARY_TLS_SERVER_NAME"])
-			os.Setenv("BOUNDARY_PASS", settings["BOUNDARY_PASS"])
+	mainWindow = app.NewWindow("Tunnelvision")
+	hosts, _ := loadHostsFromFile(settingsFile2)
+	updateTrayMenu(app, hosts)
+
+	app.Run()
+}
+
+func updateHostsList() {
+	hosts, err := loadHostsFromFile(settingsFile2)
+	if err != nil {
+		fmt.Println("Error loading hosts:", err)
+		return
+	}
+
+	hostsList.Length = func() int {
+		return len(hosts)
+	}
+	hostsList.UpdateItem = func(id widget.ListItemID, item fyne.CanvasObject) {
+		item.(*widget.Label).SetText(hosts[id].Name)
+	}
+
+	hostsList.Refresh()
+}
+
+func onHostAdded(app fyne.App, newHost types.Host) {
+	hosts, _ := loadHostsFromFile(settingsFile2)
+	hosts = append(hosts, newHost)
+	_ = saveHostsToFile(hosts, settingsFile2)
+
+	updateTrayMenu(app, hosts)
+}
+
+func updateTrayMenu(app fyne.App, hosts []types.Host) {
+	dynamicMenuItems := make([]*fyne.MenuItem, 0)
+
+	for _, host := range hosts {
+		hostCopy := host
+		tunnelStatus := ""
+		if activeTunnels[hostCopy.Name] {
+			tunnelStatus = " ✓" // Unicode checkmark
+		}
+		menuItemTitle := hostCopy.Name + tunnelStatus
+		menuItem := fyne.NewMenuItem(menuItemTitle, func() {
+			fmt.Println("Selected host:", hostCopy.Name)
+			portForwards := make([]string, 0)
+			for _, portForward := range hostCopy.PortForwards {
+				portForwards = append(portForwards, portForward.SourcePort+":"+portForward.DestinationHost+":"+portForward.DestinationPort)
+			}
+			BoundaryTunnel("/opt/homebrew/bin/boundary", hostCopy.Username, hostCopy.TargetID, portForwards, hostCopy.Name)
+			beeep.Notify("Boundary Tunnel", "The Boundary tunnel has been established successfully.", "")
+		})
+		dynamicMenuItems = append(dynamicMenuItems, menuItem)
+	}
+
+	dynamicMenuItems = append(dynamicMenuItems, fyne.NewMenuItemSeparator())
+
+	standardMenuItems := []*fyne.MenuItem{
+		fyne.NewMenuItem("Hosts", func() {
+			showHostsWindow(app)
+		}),
+		fyne.NewMenuItem("Settings", func() {
+			showSupportWindow(app)
+		}),
+		fyne.NewMenuItem("Quit", func() {
+			app.Quit()
+		}),
+	}
+
+	allMenuItems := append(dynamicMenuItems, standardMenuItems...)
+
+	trayMenu = fyne.NewMenu("", allMenuItems...)
+	if desk, ok := app.(desktop.App); ok {
+		desk.SetSystemTrayMenu(trayMenu)
+	}
+}
+
+func saveHostsToFile(hosts []types.Host, filename string) error {
+	data, err := yaml.Marshal(hosts)
+	if err != nil {
+		fmt.Printf("Error marshalling YAML: %v\n", err)
+		return err
+	}
+	err = os.WriteFile(filename, data, 0644)
+	if err != nil {
+		fmt.Printf("Error writing file: %v\n", err)
+	}
+	return err
+}
+
+func loadHostsFromFile(filename string) ([]types.Host, error) {
+	var hosts []types.Host
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		if os.IsNotExist(err) {
+			err = saveHostsToFile(hosts, filename)
+			if err != nil {
+				return nil, err
+			}
+			return hosts, nil
+		}
+		return nil, err
+	}
+	err = yaml.Unmarshal(data, &hosts)
+	return hosts, err
+}
+
+func showHostsWindow(a fyne.App) {
+	w := a.NewWindow("Hosts")
+	w.Resize(fyne.NewSize(600, 600))
+
+	nameEntry := widget.NewEntry()
+	nameEntry.SetPlaceHolder("Enter Name")
+
+	usernameEntry := widget.NewEntry()
+	usernameEntry.SetPlaceHolder("Enter Username")
+
+	targetIDEntry := widget.NewEntry()
+	targetIDEntry.SetPlaceHolder("Enter TargetID")
+
+	portForwardContainer := container.NewVBox()
+	addPortForward := func() *fyne.Container {
+		sourcePortEntry := widget.NewEntry()
+		sourcePortEntry.SetPlaceHolder("Source Port")
+		destinationHostEntry := widget.NewEntry()
+		destinationHostEntry.SetPlaceHolder("Destination Host")
+		destinationPortEntry := widget.NewEntry()
+		destinationPortEntry.SetPlaceHolder("Destination Port")
+
+		return container.NewHBox(sourcePortEntry, destinationHostEntry, destinationPortEntry)
+	}
+
+	portForwardContainer.Add(addPortForward())
+
+	addPortForwardButton := widget.NewButton("Add Another Port Forward", func() {
+		portForwardContainer.Add(addPortForward())
+		portForwardContainer.Refresh()
+	})
+
+	collectPortForwards := func() []types.PortForward {
+		var portForwards []types.PortForward
+		for _, obj := range portForwardContainer.Objects {
+			box := obj.(*fyne.Container)
+			portForwards = append(portForwards, types.PortForward{
+				SourcePort:      box.Objects[0].(*widget.Entry).Text,
+				DestinationHost: box.Objects[1].(*widget.Entry).Text,
+				DestinationPort: box.Objects[2].(*widget.Entry).Text,
+			})
+		}
+		return portForwards
+	}
+
+	if hostsList == nil {
+		hostsList = widget.NewList(
+			func() int { return 0 }, // This will be updated in updateHostsList
+			func() fyne.CanvasObject { return widget.NewLabel("") },
+			func(id widget.ListItemID, obj fyne.CanvasObject) {},
+		)
+	}
+
+	updateHostsList()
+
+	saveButton := widget.NewButton("Save Host", func() {
+		portForwards := collectPortForwards()
+		newHost := types.Host{
+			Name:         nameEntry.Text,
+			Username:     usernameEntry.Text,
+			TargetID:     targetIDEntry.Text,
+			PortForwards: portForwards,
 		}
 
-		w := a.NewWindow("New Window")
-		w.Resize(fyne.NewSize(400, 300))
-
-		usernameEntry := widget.NewEntry()
-		usernameEntry.SetPlaceHolder("Enter USERNAME")
-
-		targetIDEntry := widget.NewEntry()
-		targetIDEntry.SetPlaceHolder("Enter TARGETID")
-
-		localEntry := widget.NewEntry()
-		localEntry.SetPlaceHolder("Enter LOCAL")
-
-		remoteEntry := widget.NewEntry()
-		remoteEntry.SetPlaceHolder("Enter REMOTE")
-
-		runButton := widget.NewButton("Set Envs and Run SSH Command", func() {
-			portForwards := []string{
-				"8080:localhost:8080",
-				"8081:localhost:8081",
-			}
-
-			BoundaryTunnel("/opt/homebrew/bin/boundary", usernameEntry.Text, targetIDEntry.Text, portForwards)
-		})
-
-		w.SetContent(container.NewVBox(
-			usernameEntry,
-			targetIDEntry,
-			localEntry,
-			remoteEntry,
-			runButton,
-		))
-
-		w.Show()
-
-		desk.SetSystemTrayMenu(buildMenu(desk, true, a))
+		beeep.Notify("Host Saved", "The new host has been saved successfully.", "")
+		updateHostsList()
+		onHostAdded(a, newHost)
 	})
 
-	menu2 := fyne.NewMenuItem("Settings", func() {
-		showSupportWindow(a)
-	})
+	w.SetContent(container.NewVBox(
+		nameEntry,
+		usernameEntry,
+		targetIDEntry,
+		portForwardContainer,
+		addPortForwardButton,
+		saveButton,
+		hostsList,
+	))
 
-	menu3 := fyne.NewMenuItem("Quit", func() {
-		a.Quit()
-	})
-
-	return fyne.NewMenu("Tunnelvision", menu1, menu2, menu3)
+	w.Show()
 }
 
 func showSupportWindow(a fyne.App) {
@@ -98,15 +233,12 @@ func showSupportWindow(a fyne.App) {
 	passEntry.SetPlaceHolder("Enter BOUNDARY_PASS")
 	passEntry.Password = true
 
-	settings, err := os.ReadFile(settingsFile)
-	if err == nil {
-		lines := strings.Split(string(settings), "\n")
-		if len(lines) >= 4 {
-			addrEntry.SetText(lines[0])
-			cacertEntry.SetText(lines[1])
-			tlsServerNameEntry.SetText(lines[2])
-			passEntry.SetText(lines[3])
-		}
+	settings := loadSettings()
+	if settings != nil {
+		addrEntry.SetText(settings.BoundaryAddr)
+		cacertEntry.SetText(settings.BoundaryCACert)
+		tlsServerNameEntry.SetText(settings.BoundaryTLSServerName)
+		passEntry.SetText(settings.BoundaryPass)
 	}
 
 	saveButton := widget.NewButton("Save Settings", func() {
@@ -125,35 +257,48 @@ func showSupportWindow(a fyne.App) {
 	w.Show()
 }
 
-const settingsFile = "/Users/filip/boundary_settings.txt"
+const settingsFile = "/Users/filip/Documents/tunnelvision/settings.yaml"
+const settingsFile2 = "/Users/filip/Documents/tunnelvision/hosts.yaml"
 
 func saveSettings(addr, cacert, tlsServerName, pass string) {
-	content := fmt.Sprintf("%s\n%s\n%s\n%s", addr, cacert, tlsServerName, pass)
-	err := os.WriteFile(settingsFile, []byte(content), 0644)
+	settings := types.Settings{
+		BoundaryAddr:          addr,
+		BoundaryCACert:        cacert,
+		BoundaryTLSServerName: tlsServerName,
+		BoundaryPass:          pass,
+	}
+
+	data, err := yaml.Marshal(&settings)
+	if err != nil {
+		beeep.Alert("Error", "Failed to marshal settings: "+err.Error(), "")
+		return
+	}
+
+	err = os.WriteFile(settingsFile, data, 0644)
 	if err != nil {
 		beeep.Alert("Error", "Failed to save settings: "+err.Error(), "")
 	}
 }
 
-func loadSettings() map[string]string {
-	content, err := os.ReadFile(settingsFile)
+func loadSettings() *types.Settings {
+	var settings types.Settings
+
+	data, err := os.ReadFile(settingsFile)
 	if err != nil {
+		fmt.Println("Error reading settings file:", err)
 		return nil
 	}
 
-	settingsMap := make(map[string]string)
-	lines := strings.Split(string(content), "\n")
-	if len(lines) >= 4 {
-		settingsMap["BOUNDARY_ADDR"] = lines[0]
-		settingsMap["BOUNDARY_CACERT"] = lines[1]
-		settingsMap["BOUNDARY_TLS_SERVER_NAME"] = lines[2]
-		settingsMap["BOUNDARY_PASS"] = lines[3]
+	err = yaml.Unmarshal(data, &settings)
+	if err != nil {
+		fmt.Println("Error unmarshalling settings:", err)
+		return nil
 	}
 
-	return settingsMap
+	return &settings
 }
 
-func BoundaryTunnel(BOUNDARY_PATH string, USERNAME string, TARGETID string, portForwards []string) {
+func BoundaryTunnel(BOUNDARY_PATH string, USERNAME string, TARGETID string, portForwards []string, hostName string) {
 	fmt.Println("BOUNDARY_PATH: " + BOUNDARY_PATH)
 	var stdoutBuf, stderrBuf bytes.Buffer
 
@@ -171,8 +316,13 @@ func BoundaryTunnel(BOUNDARY_PATH string, USERNAME string, TARGETID string, port
 	if err := cmd.Run(); err != nil {
 		fullOutput := "STDOUT:\n" + stdoutBuf.String() + "\nSTDERR:\n" + stderrBuf.String()
 		beeep.Alert("Boundary Command Error", fullOutput, "")
+		activeTunnels[hostName] = false
 		return
+	} else {
+		activeTunnels[hostName] = true
 	}
+
+	updateTrayMenu(app.New(), nil) // FIX ME
 
 	message := stdoutBuf.String()
 	fmt.Println(message)
