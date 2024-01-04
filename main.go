@@ -8,13 +8,13 @@ import (
 
 	"github.com/stenstromen/tunnelvision/boundary"
 	"github.com/stenstromen/tunnelvision/types"
+	"github.com/stenstromen/tunnelvision/util"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
-	"github.com/gen2brain/beeep"
 	"gopkg.in/yaml.v2"
 )
 
@@ -135,7 +135,7 @@ func updateTrayMenu(app fyne.App, hosts []types.Host) {
 			})
 			if err != nil {
 				fmt.Println("Error running Boundary tunnel:", err)
-				beeep.Alert("Error", "Failed to run Boundary tunnel: "+err.Error(), "")
+				util.Notify("Error", "Failed to run Boundary tunnel: "+err.Error(), "error")
 			} else {
 				updateTrayMenu(app, hosts)
 			}
@@ -267,7 +267,7 @@ func showHostsWindow(a fyne.App) {
 			PortForwards: portForwards,
 		}
 
-		beeep.Notify("Host Saved", "The new host has been saved successfully.", "")
+		util.Notify("Host Saved", "The new host has been saved successfully.", "info")
 		updateHostsList()
 		onHostAdded(a, newHost)
 	})
@@ -309,7 +309,7 @@ func showSupportWindow(a fyne.App) {
 
 	saveButton := widget.NewButton("Save Settings", func() {
 		saveSettings(addrEntry.Text, cacertEntry.Text, tlsServerNameEntry.Text, passEntry.Text)
-		beeep.Notify("Settings Saved", "Your settings have been saved successfully.", "")
+		util.Notify("Settings Saved", "Your settings have been saved successfully.", "info")
 	})
 
 	w.SetContent(container.NewVBox(
@@ -333,19 +333,19 @@ func saveSettings(addr, cacert, tlsServerName, pass string) {
 
 	settingsFile, err := getSettingsFilePath()
 	if err != nil {
-		beeep.Alert("Error", "Failed to get settings file path: "+err.Error(), "")
+		util.Notify("Error", "Failed to get settings file path: "+err.Error(), "error")
 		return
 	}
 
 	data, err := yaml.Marshal(&settings)
 	if err != nil {
-		beeep.Alert("Error", "Failed to marshal settings: "+err.Error(), "")
+		util.Notify("Error", "Failed to marshal settings: "+err.Error(), "error")
 		return
 	}
 
 	err = os.WriteFile(settingsFile, data, 0644)
 	if err != nil {
-		beeep.Alert("Error", "Failed to save settings: "+err.Error(), "")
+		util.Notify("Error", "Failed to save settings: "+err.Error(), "error")
 	}
 }
 
