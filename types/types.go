@@ -1,5 +1,7 @@
 package types
 
+import "os/exec"
+
 type Host struct {
 	Name         string        `yaml:"name"`
 	Username     string        `yaml:"username"`
@@ -18,4 +20,14 @@ type Settings struct {
 	BoundaryCACert        string `yaml:"boundary_cacert"`
 	BoundaryTLSServerName string `yaml:"boundary_tls_server_name"`
 	BoundaryPass          string `yaml:"boundary_pass"`
+}
+
+type TunnelConfig struct {
+	BoundaryPath      string
+	Username          string
+	TargetID          string
+	PortForwards      []string
+	HostName          string
+	ActiveTunnels     map[string]bool
+	BoundaryProcesses map[string]*exec.Cmd
 }

@@ -1,13 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
+	"github.com/stenstromen/tunnelvision/boundary"
 	"github.com/stenstromen/tunnelvision/types"
 
 	"fyne.io/fyne/v2"
@@ -20,19 +19,18 @@ import (
 )
 
 var trayMenu *fyne.Menu
-var mainWindow fyne.Window
 var hostsList *widget.List
 
-var activeTunnels map[string]bool // Keyed by host name
+var boundaryProcesses map[string]*exec.Cmd
+var activeTunnels map[string]bool
 
 func init() {
+	boundaryProcesses = make(map[string]*exec.Cmd)
 	activeTunnels = make(map[string]bool)
 }
 
 func main() {
 	myApp := app.New()
-
-	mainWindow = myApp.NewWindow("Tunnelvision")
 
 	hostsFile, err := getHostsFilePath()
 	if err != nil {
@@ -119,20 +117,30 @@ func updateTrayMenu(app fyne.App, hosts []types.Host) {
 
 	for _, host := range hosts {
 		hostCopy := host
-		tunnelStatus := ""
-		if activeTunnels[hostCopy.Name] {
-			tunnelStatus = " ✓" // Unicode checkmark
+		menuItemTitle := hostCopy.Name
+		if active, exists := activeTunnels[hostCopy.Name]; exists && active {
+			menuItemTitle += " ✓"
 		}
-		menuItemTitle := hostCopy.Name + tunnelStatus
+
 		menuItem := fyne.NewMenuItem(menuItemTitle, func() {
 			fmt.Println("Selected host:", hostCopy.Name)
-			portForwards := make([]string, 0)
-			for _, portForward := range hostCopy.PortForwards {
-				portForwards = append(portForwards, portForward.SourcePort+":"+portForward.DestinationHost+":"+portForward.DestinationPort)
+			err := boundary.Tunnel(&types.TunnelConfig{
+				BoundaryPath:      "/opt/homebrew/bin/boundary",
+				Username:          hostCopy.Username,
+				TargetID:          hostCopy.TargetID,
+				PortForwards:      extractPortForwards(hostCopy),
+				HostName:          hostCopy.Name,
+				ActiveTunnels:     activeTunnels,
+				BoundaryProcesses: boundaryProcesses,
+			})
+			if err != nil {
+				fmt.Println("Error running Boundary tunnel:", err)
+				beeep.Alert("Error", "Failed to run Boundary tunnel: "+err.Error(), "")
+			} else {
+				updateTrayMenu(app, hosts)
 			}
-			BoundaryTunnel("/opt/homebrew/bin/boundary", hostCopy.Username, hostCopy.TargetID, portForwards, hostCopy.Name)
-			beeep.Notify("Boundary Tunnel", "The Boundary tunnel has been established successfully.", "")
 		})
+
 		dynamicMenuItems = append(dynamicMenuItems, menuItem)
 	}
 
@@ -151,11 +159,18 @@ func updateTrayMenu(app fyne.App, hosts []types.Host) {
 	}
 
 	allMenuItems := append(dynamicMenuItems, standardMenuItems...)
-
 	trayMenu = fyne.NewMenu("", allMenuItems...)
 	if desk, ok := app.(desktop.App); ok {
 		desk.SetSystemTrayMenu(trayMenu)
 	}
+}
+
+func extractPortForwards(host types.Host) []string {
+	portForwards := make([]string, 0)
+	for _, pf := range host.PortForwards {
+		portForwards = append(portForwards, pf.SourcePort+":"+pf.DestinationHost+":"+pf.DestinationPort)
+	}
+	return portForwards
 }
 
 func saveHostsToFile(hosts []types.Host, filename string) error {
@@ -235,7 +250,7 @@ func showHostsWindow(a fyne.App) {
 
 	if hostsList == nil {
 		hostsList = widget.NewList(
-			func() int { return 0 }, // This will be updated in updateHostsList
+			func() int { return 0 },
 			func() fyne.CanvasObject { return widget.NewLabel("") },
 			func(id widget.ListItemID, obj fyne.CanvasObject) {},
 		)
@@ -356,35 +371,4 @@ func loadSettings() *types.Settings {
 	}
 
 	return &settings
-}
-
-func BoundaryTunnel(BOUNDARY_PATH string, USERNAME string, TARGETID string, portForwards []string, hostName string) {
-	fmt.Println("BOUNDARY_PATH: " + BOUNDARY_PATH)
-	var stdoutBuf, stderrBuf bytes.Buffer
-
-	args := []string{"connect", "ssh", "-username", USERNAME, "-target-id", TARGETID, "--"}
-	for _, portForward := range portForwards {
-		args = append(args, "-L", portForward)
-	}
-
-	cmd := exec.Command(BOUNDARY_PATH, args...)
-	fmt.Println("cmd: " + strings.Join(cmd.Args, " "))
-	cmd.Stdout = &stdoutBuf
-	cmd.Stderr = &stderrBuf
-	cmd.Stdin = os.Stdin
-
-	if err := cmd.Run(); err != nil {
-		fullOutput := "STDOUT:\n" + stdoutBuf.String() + "\nSTDERR:\n" + stderrBuf.String()
-		beeep.Alert("Boundary Command Error", fullOutput, "")
-		activeTunnels[hostName] = false
-		return
-	} else {
-		activeTunnels[hostName] = true
-	}
-
-	updateTrayMenu(app.New(), nil) // FIX ME
-
-	message := stdoutBuf.String()
-	fmt.Println(message)
-	beeep.Notify("Boundary Command Output", message, "assets/information.png")
 }
