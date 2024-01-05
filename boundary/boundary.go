@@ -10,7 +10,9 @@ import (
 )
 
 func Tunnel(cfg *types.TunnelConfig) (bool, error) {
-	BOUNDARY_PATH, USERNAME, TARGETID, portForwards, hostName, activeTunnels, boundaryProcesses := cfg.BoundaryPath, cfg.Username, cfg.TargetID, cfg.PortForwards, cfg.HostName, cfg.ActiveTunnels, cfg.BoundaryProcesses
+	BOUNDARY_PATH, USERNAME, TARGETID := cfg.BoundaryPath, cfg.Username, cfg.TargetID
+	portForwards, hostName := cfg.PortForwards, cfg.HostName
+	activeTunnels, boundaryProcesses := cfg.ActiveTunnels, cfg.BoundaryProcesses
 
 	if cmd, ok := boundaryProcesses[hostName]; ok {
 		if err := cmd.Process.Kill(); err != nil {
