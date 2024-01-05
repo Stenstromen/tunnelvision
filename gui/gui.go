@@ -36,9 +36,8 @@ func UpdateTrayMenu(app fyne.App, hosts []types.Host) {
 		}
 
 		menuItem := fyne.NewMenuItem(menuItemTitle, func() {
-			fmt.Println("Selected host:", hostCopy.Name)
 			started, err := boundary.Tunnel(&types.TunnelConfig{
-				BoundaryPath:      "/opt/homebrew/bin/boundary",
+				BoundaryPath:      config.LoadSettings().BoundaryBinary,
 				Username:          hostCopy.Username,
 				TargetID:          hostCopy.TargetID,
 				PortForwards:      extractPortForwards(hostCopy),
@@ -167,37 +166,53 @@ func showHostsWindow(a fyne.App) {
 }
 
 func showSupportWindow(a fyne.App) {
-	w := a.NewWindow("Support Settings")
+	w := a.NewWindow("Settings")
 	w.Resize(fyne.NewSize(400, 300))
 
+	boundaryBinary := widget.NewEntry()
+	boundaryBinary.SetPlaceHolder("*Boundary Binary Path")
+	boundaryBinary.SetText("/opt/homebrew/bin/boundary")
 	addrEntry := widget.NewEntry()
-	addrEntry.SetPlaceHolder("Enter BOUNDARY_ADDR")
+	addrEntry.SetPlaceHolder("*Boundary Address*")
 	cacertEntry := widget.NewEntry()
-	cacertEntry.SetPlaceHolder("Enter BOUNDARY_CACERT")
+	cacertEntry.SetPlaceHolder("Boundary CA Cert")
+	caPath := widget.NewEntry()
+	caPath.SetPlaceHolder("Boundary CA Path")
+	clientCertPath := widget.NewEntry()
+	clientCertPath.SetPlaceHolder("Boundary Client Cert Path")
+	clientKeyPath := widget.NewEntry()
+	clientKeyPath.SetPlaceHolder("Boundary Client Key Path")
+	tlsInsecure := widget.NewCheck("Boundary TLS Insecure", nil)
+	tlsInsecure.SetChecked(false)
 	tlsServerNameEntry := widget.NewEntry()
-	tlsServerNameEntry.SetPlaceHolder("Enter BOUNDARY_TLS_SERVER_NAME")
-	passEntry := widget.NewEntry()
-	passEntry.SetPlaceHolder("Enter BOUNDARY_PASS")
-	passEntry.Password = true
+	tlsServerNameEntry.SetPlaceHolder("Boundary TLS Server Name")
 
 	settings := config.LoadSettings()
 	if settings != nil {
+		boundaryBinary.SetText(settings.BoundaryBinary)
 		addrEntry.SetText(settings.BoundaryAddr)
 		cacertEntry.SetText(settings.BoundaryCACert)
+		caPath.SetText(settings.BoundaryCAPath)
+		clientCertPath.SetText(settings.BoundaryClientCertPath)
+		clientKeyPath.SetText(settings.BoundaryClientKeyPath)
+		tlsInsecure.SetChecked(settings.BoundaryTLSInsecure)
 		tlsServerNameEntry.SetText(settings.BoundaryTLSServerName)
-		passEntry.SetText(settings.BoundaryPass)
 	}
 
 	saveButton := widget.NewButton("Save Settings", func() {
-		config.SaveSettings(addrEntry.Text, cacertEntry.Text, tlsServerNameEntry.Text, passEntry.Text)
+		config.SaveSettings(boundaryBinary.Text, addrEntry.Text, cacertEntry.Text, caPath.Text, clientCertPath.Text, clientKeyPath.Text, tlsServerNameEntry.Text, tlsInsecure.Checked)
 		util.Notify("Settings Saved", "Your settings have been saved successfully.", "info")
 	})
 
 	w.SetContent(container.NewVBox(
+		boundaryBinary,
 		addrEntry,
 		cacertEntry,
+		caPath,
+		clientCertPath,
+		clientKeyPath,
 		tlsServerNameEntry,
-		passEntry,
+		tlsInsecure,
 		saveButton,
 	))
 

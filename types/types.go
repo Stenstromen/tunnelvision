@@ -16,10 +16,14 @@ type PortForward struct {
 }
 
 type Settings struct {
-	BoundaryAddr          string `yaml:"boundary_addr"`
-	BoundaryCACert        string `yaml:"boundary_cacert"`
-	BoundaryTLSServerName string `yaml:"boundary_tls_server_name"`
-	BoundaryPass          string `yaml:"boundary_pass"`
+	BoundaryBinary         string `yaml:"boundary_binary"`
+	BoundaryAddr           string `yaml:"boundary_addr"`
+	BoundaryCACert         string `yaml:"boundary_cacert"`
+	BoundaryCAPath         string `yaml:"boundary_capath"`
+	BoundaryClientCertPath string `yaml:"boundary_client_cert_path"`
+	BoundaryClientKeyPath  string `yaml:"boundary_client_key_path"`
+	BoundaryTLSInsecure    bool   `yaml:"boundary_tls_insecure"`
+	BoundaryTLSServerName  string `yaml:"boundary_tls_server_name"`
 }
 
 type TunnelConfig struct {

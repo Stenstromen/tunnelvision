@@ -33,12 +33,16 @@ func getSettingsFilePath() (string, error) {
 	return filepath.Join(appSupportDir, "settings.yaml"), nil
 }
 
-func SaveSettings(addr, cacert, tlsServerName, pass string) {
+func SaveSettings(boundaryBinary, addr, cacert, caPath, clientCertPath, clientKeyPath, tlsServerName string, useTLS bool) {
 	settings := types.Settings{
-		BoundaryAddr:          addr,
-		BoundaryCACert:        cacert,
-		BoundaryTLSServerName: tlsServerName,
-		BoundaryPass:          pass,
+		BoundaryBinary:         boundaryBinary,
+		BoundaryAddr:           addr,
+		BoundaryCACert:         cacert,
+		BoundaryCAPath:         caPath,
+		BoundaryClientCertPath: clientCertPath,
+		BoundaryClientKeyPath:  clientKeyPath,
+		BoundaryTLSInsecure:    useTLS,
+		BoundaryTLSServerName:  tlsServerName,
 	}
 
 	settingsFile, err := getSettingsFilePath()
