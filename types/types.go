@@ -31,3 +31,5 @@ type TunnelConfig struct {
 	ActiveTunnels     map[string]bool
 	BoundaryProcesses map[string]*exec.Cmd
 }
+
+type Level string

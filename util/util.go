@@ -2,17 +2,22 @@ package util
 
 import (
 	"github.com/gen2brain/beeep"
+	"github.com/stenstromen/tunnelvision/types"
 )
 
-func Notify(title, message, level string) {
+const (
+	InfoLevel    types.Level = "info"
+	WarningLevel types.Level = "warning"
+	ErrorLevel   types.Level = "error"
+)
+
+func Notify(title, message string, level types.Level) {
 	switch level {
-	case "info":
+	case InfoLevel:
 		beeep.Notify(title, message, "assets/information.png")
-	case "warning":
+	case WarningLevel:
 		beeep.Alert(title, message, "assets/warning.png")
-	case "error":
+	case ErrorLevel:
 		beeep.Alert(title, message, "assets/error.png")
-	default:
-		beeep.Notify(title, message, "assets/information.png")
 	}
 }
