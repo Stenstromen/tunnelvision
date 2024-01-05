@@ -9,16 +9,16 @@ import (
 	"github.com/stenstromen/tunnelvision/types"
 )
 
-func Tunnel(cfg *types.TunnelConfig) error {
+func Tunnel(cfg *types.TunnelConfig) (bool, error) {
 	BOUNDARY_PATH, USERNAME, TARGETID, portForwards, hostName, activeTunnels, boundaryProcesses := cfg.BoundaryPath, cfg.Username, cfg.TargetID, cfg.PortForwards, cfg.HostName, cfg.ActiveTunnels, cfg.BoundaryProcesses
 
 	if cmd, ok := boundaryProcesses[hostName]; ok {
 		if err := cmd.Process.Kill(); err != nil {
-			return fmt.Errorf("failed to kill boundary process: %v", err)
+			return false, fmt.Errorf("failed to kill boundary process: %v", err)
 		}
 		delete(boundaryProcesses, hostName)
 		activeTunnels[hostName] = false
-		return nil
+		return false, nil
 	}
 
 	var stdoutBuf, stderrBuf bytes.Buffer
@@ -33,7 +33,7 @@ func Tunnel(cfg *types.TunnelConfig) error {
 	cmd.Stdin = os.Stdin
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start boundary command: %v", err)
+		return false, fmt.Errorf("failed to start boundary command: %v", err)
 	}
 
 	boundaryProcesses[hostName] = cmd
@@ -50,5 +50,5 @@ func Tunnel(cfg *types.TunnelConfig) error {
 		}
 	}()
 
-	return nil
+	return true, nil
 }
