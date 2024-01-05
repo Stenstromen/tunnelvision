@@ -5,9 +5,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/widget"
-
 	"github.com/stenstromen/tunnelvision/types"
 	"github.com/stenstromen/tunnelvision/util"
 	"gopkg.in/yaml.v2"
@@ -93,29 +90,6 @@ func GetHostsFilePath() (string, error) {
 	}
 
 	return filepath.Join(appSupportDir, "hosts.yaml"), nil
-}
-
-func updateHostsList(hostsList *widget.List) {
-	hostsFile, err := GetHostsFilePath()
-	if err != nil {
-		fmt.Println("Error getting hosts file path:", err)
-		return
-	}
-
-	hosts, err := LoadHostsFromFile(hostsFile)
-	if err != nil {
-		fmt.Println("Error loading hosts:", err)
-		return
-	}
-
-	hostsList.Length = func() int {
-		return len(hosts)
-	}
-	hostsList.UpdateItem = func(id widget.ListItemID, item fyne.CanvasObject) {
-		item.(*widget.Label).SetText(hosts[id].Name)
-	}
-
-	hostsList.Refresh()
 }
 
 func SaveHostsToFile(hosts []types.Host, filename string) error {
